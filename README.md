@@ -13,13 +13,17 @@ It contains:
 - Three competing methods (TBFL, DCDP, BSOP/WBSIP)
 - Simulation utilities (`simu/`) and experiment scripts (`runcode_*.m`)
 
-For further details on the problem and the algorithm, please refer to our paper:
+For further details on the problem and the algorithm, please refer to [our paper](https://arxiv.org/abs/2605.12881):
 
 ```bibtex
 @article{LP2026,
       title={Change-point detection in variance-covariance matrix}, 
       author={Ying Lin, Benjamin Poignard},
       year={2026},
+      eprint={2605.12881},
+      archivePrefix={arXiv},
+      primaryClass={math.ME},
+      url={https://arxiv.org/abs/2605.12881},
 }
 ```
 
