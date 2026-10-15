@@ -13,16 +13,17 @@ It contains:
 - Three competing methods (TBFL, DCDP, BSOP/WBSIP)
 - Simulation utilities (`simu/`) and experiment scripts (`runcode_*.m`)
 
-For further details on the problem and the algorithm, please refer to [our paper](https://arxiv.org/abs/2605.12881):
+For further details on the problem and the algorithm, please refer to our paper:
 
 ```bibtex
 @article{LP2026,
-      title={Change-point detection in variance-covariance matrix}, 
-      author={Ying Lin, Benjamin Poignard},
+      title={Change-point detection in variance-covariance matrix},
+      author={Ying Lin and Benjamin Poignard},
       year={2026},
       eprint={2605.12881},
       archivePrefix={arXiv},
-      primaryClass={math.ME},
+      primaryClass={stat.ME},
+      doi={10.48550/arXiv.2605.12881},
       url={https://arxiv.org/abs/2605.12881},
 }
 ```
@@ -54,7 +55,9 @@ Utilities / data:
 - `simu/`: synthetic data generation for iid, banded, and factor-model settings
 - `utils/`: helper functions for evaluation, reporting, and plotting
 - `utils/post_covariance/`: post-segmentation covariance refits for baseline break detectors
-- `data/`: bundled input datasets used by the real-data scripts
+- `data/`: the bundled SP100 panel used by the real-data script: daily closing
+  prices of the 94 constituents, the S&P 100 index level and the trading
+  calendar, in `data/SP100.xls`
 - `results/`: default output location for experiment logs and saved results
 
 ## Running Experiments
@@ -62,7 +65,7 @@ Utilities / data:
 All entry points follow the `runcode_*.m` naming convention. Common ones:
 
 - `runcode_simu.m`: main simulation pipeline across DGPs and tuning grids
-- `runcode_realdata.m`: real-data estimation and portfolio evaluation
+- `runcode_realdata.m`: real-data estimation and break diagnostics
 - `runcode_sensitivity.m`: sensitivity analysis for adaptive exponents
 - `runcode_computational_complexity.m`: empirical computational complexity analysis
 
@@ -76,17 +79,17 @@ runcode_simu
 % runcode_realdata
 ```
 
-## Supplementary Documentation
-
-Detailed analysis and discussion from the paper:
-
-- [Sensitivity to Adaptive Weight Exponents](docs/sensitivity_adaptive_weights.md) — sensitivity of the adaptive estimator to $\mu_1$ and $\mu_2$ across all three DGPs
-- [Empirical Computational Complexity](docs/empirical_computational_complexity.md) — empirical computational complexity with respect to tuning parameters, $T$, and $p$
-
 ## Notes
 
-- The repository includes `utils/boundedline/` as a vendored external
-  plotting package.
+- `utils/boundedline/` is a vendored subset of the `boundedline` package by
+  Kelly Kearney (<https://github.com/kakearney/boundedline-pkg/>), distributed
+  under its own MIT license (`utils/boundedline/LICENSE.txt`).
+  Only the four functions the computation-time figures need are kept —
+  `boundedline.m`, `singlepatch.m`, `catuneven.m` and the `Inpaint_nans`
+  dependency of John D'Errico, whose license sits in
+  `utils/boundedline/Inpaint_nans/license.txt`. The other files the package
+  README describes, such as `outlinebounds.m` and the demonstrations, are not
+  shipped here.
 - Result files are written under `results/` by default.
 - Due to numerical sensitivity, **TBFL** may produce slightly different results
   across different machines. TBFL tends to over-segment, and the subsequent
@@ -96,4 +99,12 @@ Detailed analysis and discussion from the paper:
 
 ## License
 
-This project is released under the MIT License (see [`LICENSE`](LICENSE)).
+The source code of this project is released under the MIT License (see
+[`LICENSE`](LICENSE)).
+
+That license does not extend to the market data bundled in
+`data/SP100.xls`. Those are third-party data obtained from Yahoo Finance
+(<https://finance.yahoo.com>) and are included solely so that the real-data
+experiment can be reproduced. They remain subject to the terms of their
+original provider; reuse and redistribution of the data must comply with
+those terms. See [`LICENSE`](LICENSE) for the full notice.

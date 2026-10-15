@@ -1,7 +1,7 @@
 function run(obj)
     %% Run TBFL for GGM (aligned to R LinearDetect).
     %
-    % This run() method mirrors LinearDetect::tbfl(method="GGM"):
+    % This run() method implements LinearDetect::tbfl(method="GGM"):
     % - If obj.block_size is empty, search obj.block_size_grid and select
     %   the optimal block size via HBIC (R: optimal.block=TRUE).
     % - For each block size, select (lambda1, lambda2) via CV over a grid
@@ -112,8 +112,9 @@ function run(obj)
     else
         % Fixed block size mode (no HBIC-based selection).
         %
-        % This path mirrors LinearDetect's behavior when `optimal.block` is
-        % disabled and a single block size is specified by the user.
+        % This path corresponds to LinearDetect's behavior when
+        % `optimal.block` is disabled and a single block size is specified
+        % by the user.
         bs = obj.block_size;
         if numel(bs) ~= 1
             error("TBFL:run:badBlockSize", "block_size must be a scalar.");
@@ -291,7 +292,7 @@ end
 function beta_final = bic_threshold_ggm(obj, beta_hat_list, cp_final, b_n)
     %% Threshold segment-wise coefficients using BIC (GGM).
     %
-    % This mirrors LinearDetect::BIC.threshold.ggm(), which selects a
+    % This implements LinearDetect::BIC.threshold.ggm(), which selects a
     % threshold lambda for each segment by minimizing a BIC score computed
     % on trimmed residuals (drop the first/last b_n samples of the segment).
     %

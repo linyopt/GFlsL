@@ -1,10 +1,20 @@
 function dfeas = DualFeas(obj)
     %% Compute dual infeasibility.
 
-    % Compute eigenvalues of delta_.
-    eigs_delta_ = reshape(pageeig(obj.delta_), obj.p, obj.T);
-    % Find the absolute value of the minimum negative eigenvalues.
-    min_eigs = abs(min(min(eigs_delta_), 0));
+    % Positive definite pages have zero cone infeasibility. Screen them with
+    % Cholesky and compute eigenvalues only for pages that fail.
+    need_eig = false(1, obj.T);
+    for tt = 1:obj.T
+        [~, chol_flag] = chol(obj.delta_(:, :, tt));
+        need_eig(tt) = chol_flag ~= 0;
+    end
+
+    min_eigs = zeros(1, obj.T);
+    if any(need_eig)
+        eigs_delta_ = reshape(pageeig(obj.delta_(:, :, need_eig)), ...
+            obj.p, nnz(need_eig));
+        min_eigs(need_eig) = abs(min(min(eigs_delta_, [], 1), 0));
+    end
     % Compute the norm of delta_.
     norms_delta_ = vecnorm(reshape(obj.delta_, [], obj.T));
     % Compute dfeas1.

@@ -1,8 +1,19 @@
 % Sensitivity analysis for adaptive second-stage exponents (mu1, mu2).
 % This script evaluates how different pairs of (mu1, mu2) affect adaptive
 % GFlsL performance when kappa is fixed. Second-stage models are selected
-% by HFE, lossval, BIC, HBIC, and HBICG. Results are averaged over
-% num_exps experiments.
+% by HFE, lossval, BIC, HBIC, the fixed-penalty HBIC/HBICG variants, and the
+% plug-in calibrated HBIC_c1/HBIC_c2, the same criteria reported by
+% get_two_stage_est.
+%
+% Unlike get_two_stage_est, the first stage is deliberately held fixed: its
+% fusion parameter is chosen per replication so that the detected break count
+% is the smallest one not below the true m*, rather than being selected by the
+% criteria over the first-stage grid. Holding the first stage constant
+% isolates the effect of (mu1, mu2); it also means that the levels reported
+% here are not directly comparable with those of the main experiment.
+%
+% Results are averaged over num_exps replications, which are separate from
+% those of the main experiment.
 
 addpath(genpath(pwd));
 clear;
@@ -24,6 +35,7 @@ num_breaks_list = [1, 3];
 tol = 1e-3;
 beta_ = 0.1;
 epsilon = 0.01;
+termination_check_freq = 20;
 
 % Fixed adaptive-threshold exponent
 kappa_ = 0.5;
@@ -35,8 +47,13 @@ mu2s = [0.5, 0.8, 1.5];
 lenmu1 = length(mu1s);
 lenmu2 = length(mu2s);
 
-% Selection criteria for second-stage model selection
-IC_names = {'HFE', 'lossval', 'BIC', 'HBIC', 'HBICG'};
+% Selection criteria for second-stage model selection. The fixed-penalty
+% variants and the plug-in calibrated selectors match the criteria
+% reported by get_two_stage_est.
+IC_names = {'HFE', 'lossval', 'BIC', 'HBIC', 'HBICG', ...
+    'HBIC_g0_b8', 'HBIC_g2_b8', 'HBIC_g4_b1', ...
+    'HBICG_g0_b2', 'HBICG_g025_b1', 'HBICG_g05_b1', ...
+    'HBIC_c1', 'HBIC_c2'};
 lenIC = length(IC_names);
 
 % Metric names in storage order
@@ -44,12 +61,13 @@ metric_names = {'nbreaks', 'HD', 'F1', 'acc', 'error'};
 num_metrics = length(metric_names);
 
 % Helper to find the index of the first minimum element in a given
-% array (reuse from get_two_stage_est.m).
-findMinIn = @(x) ind2sub(size(x), find(x == min(x, [], 'all'), 1));
+% array, ignoring unevaluated Inf/NaN entries (shared with
+% get_two_stage_est.m).
+findMinIn = @(x) argmin_finite(x);
 
-% Use the same shared simulation grid as runcode_simu.m for p = 10.
-lamb1s = p * (2.0e-4:5.0e-4:3.2e-3);
-lamb2s = p * (0.12:0.08:0.44);
+% Use the same shared lambda grids as runcode_simu.m for p = 10.
+lamb1s = p * (2.0e-4:2.5e-4:4.45e-3);
+lamb2s = p * (0.08:0.04:0.56);
 lamb2s2 = p * (0.02:0.07:0.58);
 
 len1 = length(lamb1s);
@@ -86,6 +104,7 @@ for mi = 1:length(num_breaks_list)
     fprintf(fid, '  T = %d, p = %d, num_breaks = %d\n', T, p, num_breaks);
     fprintf(fid, '  num_exps = %d, Nsim = %d, prob = %.1f\n', num_exps, Nsim, prob);
     fprintf(fid, '  kappa = %.1f, bb = T^{-kappa}\n', kappa_);
+    fprintf(fid, '  termination_check_freq = %d\n', termination_check_freq);
     fprintf(fid, '  mu1 candidates: [%s]\n', sprintf('%.1f ', mu1s));
     fprintf(fid, '  mu2 candidates: [%s]\n', sprintf('%.1f ', mu2s));
     fprintf(fid, '  second-stage criteria: %s\n\n', strjoin(IC_names, ', '));
@@ -146,8 +165,9 @@ for mi = 1:length(num_breaks_list)
             stage1_break_counts = zeros(len2, 1);
             for k = 1:len2
                 Est1 = GFlsL(X=X, lamb1=0, lamb2=lamb2s(k), beta_=beta_, ...
-                             epsilon=epsilon, tol=tol, maxiter=inf, disp_freq=inf, ...
-                             showfig=0, merge_breaks=false);
+                             epsilon=epsilon, tol=tol, maxiter=inf, ...
+                             disp_freq=inf, merge_breaks=false, ...
+                             termination_check_freq=termination_check_freq);
                 Est1.run();
 
                 stage1_break_counts(k) = length(Est1.EstBreaks());
@@ -186,6 +206,7 @@ for mi = 1:length(num_breaks_list)
 
                     % Second-stage score arrays
                     loss2s = inf(num122, 1);
+                    lossval2s = inf(num122, 1);
                     BIC2s = inf(num122, 1);
                     HBIC_2s = inf(num122, 1);
                     HBICG_2s = inf(num122, 1);
@@ -204,10 +225,12 @@ for mi = 1:length(num_breaks_list)
                         Est2 = GFlsL(X=X, lamb1=lamb1s(i1) .* xi1_, ...
                             lamb2=lamb2s2(i2) .* xi2_, beta_=beta_, ...
                             epsilon=epsilon, tol=tol, maxiter=inf, ...
-                            disp_freq=inf, showfig=0, merge_breaks=false);
+                            disp_freq=inf, merge_breaks=false, ...
+                            termination_check_freq=termination_check_freq);
                         Est2.run();
 
                         loss2s(ii) = Est2.lossfunc(X_test);
+                        lossval2s(ii) = Est2.lossval;
                         BIC2s(ii) = Est2.BIC;
                         HBIC_2s(ii) = Est2.HBIC;
                         HBICG_2s(ii) = Est2.HBICG;
@@ -227,6 +250,9 @@ for mi = 1:length(num_breaks_list)
                     % Build metric rows per selection criterion.
                     % Source order: [HD, F1, error, acc, nbreaks].
                     % Storage order: [nbreaks, HD, F1, acc, error].
+                    aT = log(T) * p / T;
+                    cT = log(T) * log(p) / T;
+
                     hfe_src = two_stage_HFE(HDs2, F1s2, errors2, ...
                         accs2, EstBreaks2);
 
@@ -246,6 +272,29 @@ for mi = 1:length(num_breaks_list)
                     HBICG_src = [HDs2(jj), F1s2(jj), errors2(jj), ...
                                  accs2(jj), length(EstBreaks2{jj})];
 
+                    % Fixed-penalty HBIC variants.
+                    hbic_g0_b8 = hbic_penalty_select(HBIC_2s, lossval2s, ...
+                        EstBreaks2, HDs2, F1s2, errors2, accs2, aT, cT, 0, 8);
+                    hbic_g2_b8 = hbic_penalty_select(HBIC_2s, lossval2s, ...
+                        EstBreaks2, HDs2, F1s2, errors2, accs2, aT, cT, 2, 8);
+                    hbic_g4_b1 = hbic_penalty_select(HBIC_2s, lossval2s, ...
+                        EstBreaks2, HDs2, F1s2, errors2, accs2, aT, cT, 4, 1);
+
+                    % Fixed-penalty HBICG variants.
+                    hbicg_g0_b2 = hbicg_penalty_select(HBICG_2s, HBIC_2s, ...
+                        lossval2s, EstBreaks2, HDs2, F1s2, errors2, accs2, ...
+                        aT, cT, 0, 2);
+                    hbicg_g025_b1 = hbicg_penalty_select(HBICG_2s, HBIC_2s, ...
+                        lossval2s, EstBreaks2, HDs2, F1s2, errors2, accs2, ...
+                        aT, cT, 0.25, 1);
+                    hbicg_g05_b1 = hbicg_penalty_select(HBICG_2s, HBIC_2s, ...
+                        lossval2s, EstBreaks2, HDs2, F1s2, errors2, accs2, ...
+                        aT, cT, 0.5, 1);
+
+                    % Plug-in calibrated HBIC_c selectors.
+                    [hbic_c1, hbic_c2] = c_est_select(HBIC_2s, lossval2s, ...
+                        EstBreaks2, HDs2, F1s2, errors2, accs2, aT, cT);
+
                     % Convert source → storage order
                     method_metrics = zeros(lenIC, num_metrics);
                     method_metrics(1, :) = [hfe_src(5), hfe_src(1), hfe_src(2), ...
@@ -258,6 +307,22 @@ for mi = 1:length(num_breaks_list)
                                             HBIC_src(4), HBIC_src(3)];
                     method_metrics(5, :) = [HBICG_src(5), HBICG_src(1), HBICG_src(2), ...
                                             HBICG_src(4), HBICG_src(3)];
+                    method_metrics(6, :) = [hbic_g0_b8(5), hbic_g0_b8(1), hbic_g0_b8(2), ...
+                                            hbic_g0_b8(4), hbic_g0_b8(3)];
+                    method_metrics(7, :) = [hbic_g2_b8(5), hbic_g2_b8(1), hbic_g2_b8(2), ...
+                                            hbic_g2_b8(4), hbic_g2_b8(3)];
+                    method_metrics(8, :) = [hbic_g4_b1(5), hbic_g4_b1(1), hbic_g4_b1(2), ...
+                                            hbic_g4_b1(4), hbic_g4_b1(3)];
+                    method_metrics(9, :) = [hbicg_g0_b2(5), hbicg_g0_b2(1), hbicg_g0_b2(2), ...
+                                            hbicg_g0_b2(4), hbicg_g0_b2(3)];
+                    method_metrics(10, :) = [hbicg_g025_b1(5), hbicg_g025_b1(1), hbicg_g025_b1(2), ...
+                                             hbicg_g025_b1(4), hbicg_g025_b1(3)];
+                    method_metrics(11, :) = [hbicg_g05_b1(5), hbicg_g05_b1(1), hbicg_g05_b1(2), ...
+                                             hbicg_g05_b1(4), hbicg_g05_b1(3)];
+                    method_metrics(12, :) = [hbic_c1(5), hbic_c1(1), hbic_c1(2), ...
+                                             hbic_c1(4), hbic_c1(3)];
+                    method_metrics(13, :) = [hbic_c2(5), hbic_c2(1), hbic_c2(2), ...
+                                             hbic_c2(4), hbic_c2(3)];
 
                     results_all(idx_mu1, idx_mu2, :, :, tt) = method_metrics;
                 end
@@ -277,10 +342,10 @@ for mi = 1:length(num_breaks_list)
         % Save MAT summary for this DGP
         save(fullfile(dgp_dir, sprintf('sensitivity_mu_pairs_%s_m%d.mat', dgp_name, num_breaks)), ...
             'T', 'p', 'num_breaks', 'num_exps', 'Nsim', 'prob', 'tol', 'beta_', ...
-            'epsilon', 'kappa_', 'bb_', 'mu1s', 'mu2s', 'lamb1s', 'lamb2s', ...
-            'lamb2s2', 'IC_names', 'metric_names', 'results_all', ...
-            'results_mean', 'results_std', 'stage1_lamb2_selected', ...
-            'stage1_nbreaks_selected');
+            'epsilon', 'termination_check_freq', 'kappa_', 'bb_', 'mu1s', 'mu2s', ...
+            'lamb1s', 'lamb2s', 'lamb2s2', 'IC_names', 'metric_names', ...
+            'results_all', 'results_mean', 'results_std', ...
+            'stage1_lamb2_selected', 'stage1_nbreaks_selected');
 
         % Plot heatmaps for each method with five metrics per figure
         plot_method_heatmaps(dgp_dir, dgp_name, num_breaks, mu1s, mu2s, ...
@@ -314,8 +379,8 @@ for mi = 1:length(num_breaks_list)
     % Save one MAT summary per break-count case
     save(fullfile(case_dir, sprintf('sensitivity_summary_mu_pairs_m%d.mat', num_breaks)), ...
         'results_by_dgp', 'T', 'p', 'num_breaks', 'num_exps', 'Nsim', 'prob', ...
-        'tol', 'beta_', 'epsilon', 'kappa_', 'mu1s', 'mu2s', 'IC_names', ...
-        'metric_names');
+        'tol', 'beta_', 'epsilon', 'termination_check_freq', 'kappa_', 'mu1s', ...
+        'mu2s', 'IC_names', 'metric_names');
 end
 
 %% Local helper functions

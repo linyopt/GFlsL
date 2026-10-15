@@ -1,35 +1,34 @@
 function Theta_Up(obj)
     %% Theta update.
 
-    % Compute Psi_k.
-    % Compute Z_diff = Z_{t+1} - Z_t, where the first one and the last one
-    % are different.
-    Z_diff = zeros(obj.p, obj.p, obj.T);
-    % The first one.
-    Z_diff(:, :, 1) = obj.Z_k(:, :, 2);
-    % The middle ones.
-    Z_diff(:, :, 2:obj.T-1) = diff(obj.Z_k(:, :, 2:obj.T), 1, 3);
-    % The last one.
-    Z_diff(:, :, obj.T) = - obj.Z_k(:, :, obj.T);
+    % Assemble the right-hand side with the fixed block-diagonal metric.
+    % V acts on every entry, Upsilon only on off-diagonal entries, and D
+    % on each temporal neighbour.
+    Psi_k = obj.XXt_over_T + obj.Y_k + obj.beta_u * obj.Upsilon_k;
+    Psi_k = Psi_k + obj.A_k + obj.beta_v * obj.V_k;
 
-    % Compute D_diff = D_{t+1} - D_t.
-    D_diff = zeros(obj.p, obj.p, obj.T);
-    % The first one.
-    D_diff(:, :, 1) = obj.D_k(:, :, 2);
-    % The middle ones.
-    D_diff(:, :, 2:obj.T-1) = diff(obj.D_k(:, :, 2:obj.T), 1, 3);
-    % The last one.
-    D_diff(:, :, obj.T) = - obj.D_k(:, :, obj.T);
+    % Subtract (Z_{t+1} - Z_t) + beta_d * (D_{t+1} - D_t), using the
+    % boundary convention Z_1 = Z_{T+1} = D_1 = D_{T+1} = 0.
+    G_shift = obj.Z_k(:, :, 2:obj.T) + obj.beta_d * obj.D_k(:, :, 2:obj.T);
+    Psi_k(:, :, 1:obj.T-1) = Psi_k(:, :, 1:obj.T-1) - G_shift;
+    Psi_k(:, :, 2:obj.T) = Psi_k(:, :, 2:obj.T) + G_shift;
 
-    % Compute Psi.
-    Psi_k = obj.XXt / (obj.T) + obj.A_k + obj.Y_k - Z_diff ...
-        + obj.beta_ * (obj.V_k + obj.Upsilon_k - D_diff);
-
-    % Use \ to solve the linear system.
-    Theta_kp1 = obj.A \ reshape(Psi_k, obj.p * obj.p, obj.T)';
+    % A and Adiag are tridiagonal and fixed. Below the crossover the dense
+    % inverses win because the product runs in multithreaded BLAS; above it
+    % the O(T^2 p^2) product dominates and the banded solve is cheaper.
+    Psi_flat = reshape(Psi_k, obj.p * obj.p, obj.T)';
+    Psi_diag = reshape(Psi_k(obj.idx), obj.p, obj.T)';
+    if isempty(obj.Ainv)
+        Theta_kp1 = obj.A \ Psi_flat;
+        Theta_diag = obj.Adiag \ Psi_diag;
+    else
+        Theta_kp1 = obj.Ainv * Psi_flat;
+        Theta_diag = obj.Adiaginv * Psi_diag;
+    end
     Theta_kp1 = reshape(Theta_kp1', obj.p, obj.p, obj.T);
-    Theta_kp1(obj.idx) = (obj.Adiag \ reshape(Psi_k(obj.idx), obj.p, obj.T)')';
+    Theta_kp1(obj.idx) = Theta_diag';
 
-    % Symmetrization.
-    obj.Theta_k = (Theta_kp1 + permute(Theta_kp1, [2, 1, 3])) / 2;
+    % Psi_k is assembled from symmetric blocks and both systems act along
+    % the time axis, so Theta_kp1 is already symmetric page by page.
+    obj.Theta_k = Theta_kp1;
 end

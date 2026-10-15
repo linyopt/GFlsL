@@ -19,3 +19,18 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+---
+
+Third-party data notice
+
+The MIT License above covers the software in this repository — its source
+code and documentation — and nothing else.
+
+data/SP100.xls contains daily closing prices of the S&P 100 constituents,
+the S&P 100 index level and the corresponding trading calendar, obtained from
+Yahoo Finance (https://finance.yahoo.com). The file is bundled solely so that
+the real-data experiment reported in the accompanying paper can be
+reproduced. It is not covered by the MIT License, no rights in the data are
+granted here, and it remains subject to the terms of its original provider.
+Anyone redistributing or reusing the data must comply with those terms.

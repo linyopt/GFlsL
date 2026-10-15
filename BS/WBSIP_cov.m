@@ -42,7 +42,7 @@ function result = WBSIP_cov(X, X_prime, s0, e0, Alpha, Beta, tau, delta)
     % 0-based endpoints.
     pre = [zeros(M, 1), cumsum(y_full, 2)];
 
-    % Accumulators and a stack that mirrors the recursion in Algorithm 3.
+    % Accumulators and a stack that follows the recursion in Algorithm 3.
     S_cells = {};
     D_cells = {};
     L_cells = {};

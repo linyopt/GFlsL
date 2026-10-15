@@ -39,7 +39,7 @@ function result = BS_cov(X, s0, e0, tau, level0)
     minLen = 2 * p * log(n) + 1;
 
     % Accumulators and an explicit stack.
-    % This stack mirrors the recursion in Algorithm 1.
+    % This stack follows the recursion in Algorithm 1.
     S_cells = {};
     D_cells = {};
     L_cells = {};

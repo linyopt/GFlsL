@@ -267,10 +267,10 @@ function [cluster, centers, fit2] = two_means_1d(x)
 end
 
 function val = bic_scalar(residual_row, phi_row, use_hbic, gamma_val)
-    %% Compute the per-node BIC / HBIC score used in Step II.
+    % Compute the per-node BIC / HBIC score used in Step II.
     %
-    % This mirrors LinearDetect::BIC() for the univariate residual case
-    % (p_y = 1). The model size is the number of nonzeros in phi_row.
+    % This is the univariate residual case (p_y = 1) of LinearDetect::BIC().
+    % The model size is the number of nonzeros in phi_row.
     %
     % - Input:
     %   @residual_row: Residuals for one node (length T).

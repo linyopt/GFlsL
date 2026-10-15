@@ -236,15 +236,6 @@ classdef TBFL < handle
         % Estimate segment-wise precision matrices Omega (GGM).
         [Omega_hat, info] = EstimateOmega(obj, opts)
 
-        % Compute HBIC for model selection.
-        hbic = ComputeHBIC(obj, block_size)
-
-        % Select block size and lambdas via HBIC.
-        SelectBlockSize(obj)
-
-        % Compute goodness-of-fit for a segment.
-        gof = ComputeGOF(obj, j, I, beta_j)
-
         % Compute block size grid (matching R LinearDetect).
         grid = ComputeBlockSizeGrid(obj)
 
@@ -277,11 +268,6 @@ classdef TBFL < handle
             neg = x < -lambda;
             z(pos) = x(pos) - lambda;
             z(neg) = x(neg) + lambda;
-        end
-
-        function Xvec = vec(X)
-            %% Vectorize a matrix or tensor.
-            Xvec = X(:);
         end
     end
 end

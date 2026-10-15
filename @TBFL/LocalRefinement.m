@@ -1,7 +1,7 @@
 function LocalRefinement(obj)
     %% Step III: Exhaustive local search refinement (LinearDetect-compatible).
     %
-    % This method mirrors LinearDetect:::ggm.second.step.search().
+    % This method implements LinearDetect:::ggm.second.step.search().
     %
     % Each Step II cluster is refined independently. For a cluster:
     % - If it contains multiple candidate points, search the interior

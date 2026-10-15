@@ -1,7 +1,7 @@
-function [ Y, Y_test, Sigma_tt, breaks ] = DGP_iid(T, p, m, prob, Nsim, regimes)
+function [ Y, Y_test, Sigma_tt, breaks ] = DGP_iid(T, p, m, prob, Nsim, regimes, nzlb)
 %% Generate iid data set.
 %
-% [Y, Y_test, Theta, breaks] = DGP_iid(T, p, m, prob, regimes);
+% [Y, Y_test, Theta, breaks] = DGP_iid(T, p, m, prob, regimes, nzlb);
 %
 % - Input:
 %   @T:         Sample size.
@@ -11,6 +11,8 @@ function [ Y, Y_test, Sigma_tt, breaks ] = DGP_iid(T, p, m, prob, Nsim, regimes)
 %   @Nsim:      The number of simulated validation datasets, default 10.
 %   @regimes:   'costant' or 'non-constant' to control whether the length of
 %               each regime is same.
+%   @nzlb:      Lower bound on the absolute value of true non-zero off-diag
+%               coefficients of Theta (default 0.2, see simulate_sparse_varcov).
 %
 % - Output:
 %   @Y:         Training set of size T x p.
@@ -26,6 +28,7 @@ arguments (Input)
     prob double = 0.8 % the sparsity of each true Theta's.
     Nsim (1, 1) int32 = 10 % the number of simulated validation datasets.
     regimes string = "non-constant" % "non-constant" or "constant".
+    nzlb (1, 1) double = 0.2 % lower bound of |non-zero off-diag| of Theta.
 end
 
 assert(any(strcmp(regimes, {'constant', 'non-constant'})), ...
@@ -71,10 +74,10 @@ switch regimes
 end
 
 Sigma = zeros(p,p,m+1); %a1 = -1; a2 = 1; b1 = 0.1; b2 = 0.5;
-a1 = -2; a2 = 2; b1 = 0.5; b2 = 2;
+a1 = -2; a2 = 2; b1 = 1.5; b2 = 3.5;
 for k = 1:m+1
     sparsity = round(p*(p-1)/2*prob(k));
-    Sigma(:,:,k) = simulate_sparse_varcov(p,sparsity,prob(k),a1,a2,b1,b2);
+    Sigma(:,:,k) = simulate_sparse_varcov(p,sparsity,prob(k),a1,a2,b1,b2,nzlb);
 end
 
 % Generate the data based on a Gaussian distribution with

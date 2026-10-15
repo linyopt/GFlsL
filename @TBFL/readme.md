@@ -48,9 +48,6 @@ TBFL is a three-step procedure:
 | `SolveFusedLassoNode.m` | Step I solver for one node (LinearDetect C++ port) |
 | `HardThreshold.m` | Step II: jump selection + candidate clustering |
 | `LocalRefinement.m` | Step III: local exhaustive refinement |
-| `ComputeGOF.m` | Segment goodness-of-fit helper (used by legacy code paths) |
-| `ComputeHBIC.m` | Legacy HBIC helper (not used by the current `run.m`) |
-| `SelectBlockSize.m` | Legacy block-size selection (not used by current `run.m`) |
 
 ## Usage
 

@@ -15,6 +15,9 @@ classdef GFlsL < handle
         % The covariance matrices obtained by X. The size of XXt is (d, d, T).
         XXt double {mustBeNumeric}
 
+        % Constant loss target in the Theta-update right-hand side.
+        XXt_over_T double {mustBeNumeric}
+
         % The inverse of matrix square root of sum of XXt.
         inv_sq_XXt double {mustBeNumeric}
 
@@ -37,10 +40,25 @@ classdef GFlsL < handle
         % Default 0.01
         epsilon (1, 1) double {mustBeNonnegative} = 0.01
         
-        % The augmented Lagrangian hyperparameter beta_ to balance the primal
-        % and dual. It should be positive.
+        % The augmented Lagrangian hyperparameter beta_ sets the overall
+        % penalty scale. The three constraint blocks may be preconditioned by
+        % fixed positive multipliers in penalty_scale.
         % Default 1.
         beta_ (1, 1) double {mustBePositive} = 1
+
+        % Relative penalties for the V, Upsilon, and D constraints. A fixed
+        % positive block-diagonal metric is a standard preconditioned ADMM;
+        % [1, 1, 1] recovers the original iteration.
+        penalty_scale (1, 3) double {mustBePositive} = [1, 1, 1]
+
+        % Relaxation factor in the dual ascent. The convergence proof used by
+        % this implementation permits 0 < relaxation < (1 + sqrt(5)) / 2.
+        relaxation (1, 1) double {mustBePositive} = 1.61
+
+        % Penalties after applying penalty_scale to beta_.
+        beta_v (1, 1) double {mustBePositive} = 1
+        beta_u (1, 1) double {mustBePositive} = 1
+        beta_d (1, 1) double {mustBePositive} = 1
         
         % The tolerance to stop the algorithm.
         % Default 1e-2.
@@ -54,13 +72,13 @@ classdef GFlsL < handle
         % Default 1.
         disp_freq (1, 1) double {mustBePositive} = 1
 
-        % Show figure or not.
-        % Default false.
-        showfig (1, 1) = false
-
         % Merge nearby estimated breaks after estimation.
         % Default false.
         merge_breaks (1, 1) logical = false
+
+        % Compute stopping diagnostics every termination_check_freq
+        % iterations. Default 1 matches the original algorithm.
+        termination_check_freq (1, 1) double {mustBePositive, mustBeInteger} = 1
 
         %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
         %%%% The followings are declarations of primal / dual variables. %%%%
@@ -95,6 +113,8 @@ classdef GFlsL < handle
         % fixed after initialization.
         A double % The one for off-diagonal elements.
         Adiag double % The one for diagonal elements.
+        Ainv double % Dense inverse for the off-diagonal Theta update, small T only.
+        Adiaginv double % Dense inverse for the diagonal Theta update, small T only.
         
         %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
         %%%% The followings are lossfunc / primval / dualval.            %%%%
@@ -118,6 +138,12 @@ classdef GFlsL < handle
         HBIC (1, 1) double = inf
         HBICG (1, 1) double = inf
 
+        % The Gaussian negative log-likelihood fit term used by HBICG.
+        gauss_loss (1, 1) double = inf
+
+        % Total model dimension K: active parameters summed over segments.
+        model_dim (1, 1) double = 0
+
         % breaks
         breaks double
     end
@@ -127,8 +153,7 @@ classdef GFlsL < handle
             % - Usage:
             %   Est = GFlsL(X=X, lamb1=lamb1, lamb2=lamb2, beta_=beta_, 
             %              epsilon=epsilon, tol=tol, maxiter=maxiter,
-            %              disp_freq=disp_freq, showfig=showfig,
-            %              merge_breaks=merge_breaks);
+            %              disp_freq=disp_freq, merge_breaks=merge_breaks);
             % - Note:
             %   1. Please declare arguments in an explicit way like "X=X", 
             %      do not use positional arguments.
@@ -147,8 +172,14 @@ classdef GFlsL < handle
             %   @lamb1:     lamb1, nonnegative scalar or array of size
             %   pxpxT, default 0.1.
             %   @lamb2:     lamb2, positive scalar or array of size T-1, default 100.
-            %   @beta_:     Argumented Lagrangian parameter, positive scalar,
-            %               default 1.
+            %   @beta_:     Overall augmented-Lagrangian penalty scale,
+            %               positive scalar, default 1.
+            %   @penalty_scale: Relative penalties for the V, Upsilon, and D
+            %               constraints, positive 1x3 vector, default [1 1 1].
+            %               Fixed unequal values use a block-diagonal
+            %               preconditioned ADMM without changing the estimator.
+            %   @relaxation: Dual-ascent relaxation in (0, (1+sqrt(5))/2),
+            %               default 1.61.
             %   @epsilon:   Parameter for PSD constraint, positive scalar, 
             %               default 0.01.
             %   @tol:       Tolerance to stop the algorithm, positive scalar < 1, 
@@ -156,8 +187,6 @@ classdef GFlsL < handle
             %   @maxiter:   Maximal iteration, positive scalar, default 10000.
             %   @disp_freq: Frequency for information display, default 1, 
             %               set to "inf" if you don't want any display.
-            %   @showfig:   Showing or not showing figures of difference of 
-            %               Theta per disp_freq, default false.
             %   @merge_breaks: Merge nearby estimated breaks, default false.
 
             arguments (Input)
@@ -165,12 +194,15 @@ classdef GFlsL < handle
                 opts.lamb1 {mustBeNumeric, mustBeNonnegative} = 0.1
                 opts.lamb2 {mustBeNumeric, mustBeNonnegative} = 100
                 opts.beta_ (1, 1) {mustBeNumeric, mustBePositive} = 1
+                opts.penalty_scale (1, 3) double {mustBePositive} = [1, 1, 1]
+                opts.relaxation (1, 1) {mustBeNumeric, mustBePositive} = 1.61
                 opts.epsilon (1, 1) {mustBeNumeric, mustBeNonnegative} = 0.01
                 opts.tol (1, 1) {mustBeNumeric, mustBePositive} = 1e-2
                 opts.maxiter (1, 1) {mustBeNumeric, mustBePositive} = 5000
                 opts.disp_freq (1, 1) {mustBeNumeric} = 1
-                opts.showfig (1, 1) = false
                 opts.merge_breaks (1, 1) logical = false
+                opts.termination_check_freq (1, 1) {mustBeNumeric, mustBePositive, mustBeInteger} = 1
+                opts.init_state = []
             end
 
             % Data.
@@ -235,17 +267,27 @@ classdef GFlsL < handle
             % Other parameters and options.
             obj.epsilon = opts.epsilon;
             obj.beta_ = opts.beta_;
+            obj.penalty_scale = opts.penalty_scale;
+            obj.beta_v = obj.beta_ * obj.penalty_scale(1);
+            obj.beta_u = obj.beta_ * obj.penalty_scale(2);
+            obj.beta_d = obj.beta_ * obj.penalty_scale(3);
+            obj.relaxation = opts.relaxation;
+            if obj.relaxation >= (1 + sqrt(5)) / 2
+                error('GFlsL:relaxation', ...
+                    'relaxation must be below (1 + sqrt(5)) / 2.');
+            end
             obj.tol = opts.tol;
             obj.maxiter = opts.maxiter;
             obj.disp_freq = opts.disp_freq;
-            obj.showfig = opts.showfig;
             obj.merge_breaks = opts.merge_breaks;
+            obj.termination_check_freq = opts.termination_check_freq;
 
             % Compute XXt.
             X_reshaped = reshape(obj.X, [1, obj.T, obj.p]);
             obj.XXt = bsxfun(@times, permute(X_reshaped, [3, 1, 2]), ...
                 permute(X_reshaped, [1, 3, 2]));
             obj.XXt = (obj.XXt + permute(obj.XXt, [2, 1, 3])) / 2;
+            obj.XXt_over_T = obj.XXt / obj.T;
 
             % Compute sum of XtXt^T.
             sumXXt = sum(obj.XXt, 3);
@@ -257,19 +299,71 @@ classdef GFlsL < handle
             obj.inv_sq_XXt = V * diag(sqrt(Sinv)) * V';
             obj.inv_XXt = V * diag(Sinv) * V';
 
-            % Construct the two sparse diagonal matrices used in Theta_up.
-            diagonal = [3*obj.beta_ + 1 / (obj.T); ...
-                        repmat(4*obj.beta_ + 1 / (obj.T), obj.T-2, 1); ...
-                        3*obj.beta_ + 1 / (obj.T)];
-            off_diagonal = repmat(-obj.beta_, obj.T, 1);
-            obj.A = spdiags([off_diagonal, diagonal, off_diagonal], ...
+            % Construct the two sparse tridiagonal matrices used in
+            % Theta_Up. The three splittings use a fixed block-diagonal
+            % penalty metric: V acts on every entry, Upsilon only on
+            % off-diagonal entries, and D on each temporal neighbour.
+            degree_d = [1; repmat(2, obj.T - 2, 1); 1];
+            diagonal_d = 1 / obj.T + degree_d * obj.beta_d + obj.beta_v;
+            diagonal_off = diagonal_d + obj.beta_u;
+            off_diagonal = repmat(-obj.beta_d, obj.T, 1);
+            obj.A = spdiags([off_diagonal, diagonal_off, off_diagonal], ...
                             [-1, 0, 1], obj.T, obj.T);
-            obj.Adiag = spdiags([off_diagonal, diagonal - obj.beta_, ...
-                                 off_diagonal], [-1, 0, 1], ...
-                                 obj.T, obj.T);
+            obj.Adiag = spdiags([off_diagonal, diagonal_d, off_diagonal], ...
+                                [-1, 0, 1], obj.T, obj.T);
+            % Applying a dense inverse costs O(T^2 p^2) per iteration but
+            % runs in multithreaded BLAS, which pays off only for short
+            % panels. Past the crossover Theta_Up solves the banded systems
+            % directly, and the inverses are left empty.
+            if obj.T <= 400
+                obj.Ainv = full(obj.A \ eye(obj.T));
+                obj.Adiaginv = full(obj.Adiag \ eye(obj.T));
+            else
+                obj.Ainv = [];
+                obj.Adiaginv = [];
+            end
 
-            % Initialization.
-            obj.Initialization();
+            % Initialization. When init_state provides the full primal/dual
+            % state (a converged solution of a neighboring lambda), skip the
+            % data-driven initialization and start from it instead.
+            if isempty(opts.init_state)
+                obj.Initialization();
+            else
+                st = opts.init_state;
+                if ~isfield(st, 'penalty_scale')
+                    if any(obj.penalty_scale ~= [1, 1, 1])
+                        error('GFlsL:initStatePenalty', ...
+                            ['init_state has no penalty_scale, so it can only ' ...
+                            'warm-start the default [1 1 1] metric.']);
+                    end
+                elseif ~isequal(reshape(st.penalty_scale, 1, 3), ...
+                        obj.penalty_scale)
+                    state_scale = reshape(st.penalty_scale, 1, 3);
+                    error('GFlsL:initStatePenalty', ...
+                        ['init_state was produced with penalty_scale [%g %g %g], ' ...
+                        'but the new fit uses [%g %g %g].'], ...
+                        state_scale(1), state_scale(2), state_scale(3), ...
+                        obj.penalty_scale(1), obj.penalty_scale(2), ...
+                        obj.penalty_scale(3));
+                end
+                if ~isfield(st, 'relaxation')
+                    if obj.relaxation ~= 1.61
+                        error('GFlsL:initStateRelaxation', ...
+                            ['init_state has no relaxation, so it can only ' ...
+                            'warm-start the default 1.61 setting.']);
+                    end
+                elseif st.relaxation ~= obj.relaxation
+                    error('GFlsL:initStateRelaxation', ...
+                        'init_state and new fit use different relaxation.');
+                end
+                obj.Theta_k = st.Theta_k;
+                obj.V_k = st.V_k;
+                obj.Upsilon_k = st.Upsilon_k;
+                obj.D_k = st.D_k;
+                obj.A_k = st.A_k;
+                obj.Y_k = st.Y_k;
+                obj.Z_k = st.Z_k;
+            end
 
             % Compute initilized objective value.
             obj.PrimObjVal();
@@ -282,6 +376,16 @@ classdef GFlsL < handle
         
         % The function to initialize the primal / dual variables.
         Initialization(obj)
+
+        function st = solver_state(obj)
+            %% Return the full primal/dual state for warm-starting a
+            %% neighboring-lambda fit via the init_state constructor option.
+            st = struct('Theta_k', obj.Theta_k, 'V_k', obj.V_k, ...
+                'Upsilon_k', obj.Upsilon_k, 'D_k', obj.D_k, ...
+                'A_k', obj.A_k, 'Y_k', obj.Y_k, 'Z_k', obj.Z_k, ...
+                'penalty_scale', obj.penalty_scale, ...
+                'relaxation', obj.relaxation);
+        end
 
         % The function to compute the loss function.
         val = lossfunc(obj, X)
@@ -310,9 +414,6 @@ classdef GFlsL < handle
         % The function to compute dual infeasibility.
         dfeas = DualFeas(obj)
 
-        % Plot.
-        plot(obj, figID, time_)
-
         function GetICs(obj)
             %% Compute information criteria.
             % - Usage:
@@ -325,62 +426,54 @@ classdef GFlsL < handle
             % `GetICs' should be called to compute the information
             % criteria.
 
-            % The first-order difference of Theta.
-            diff_Theta = diff(obj.Theta_k, 1, 3);
-            % The tolerance.
+            % Use one common model dimension for every information
+            % criterion. Each segment contributes p diagonal parameters and
+            % one parameter per active upper-triangular off-diagonal entry.
             threshold_ = 1e-6;
-
-            % Some helper indices.
-            idx_diff = ~repmat(eye(obj.p), [1, 1, obj.T - 1]);
-            idx_1 = 1:obj.p^2;
-            % Compute freedom.
-            K = sum(abs(diff_Theta(idx_diff)) >= threshold_) ...
-                + sum(abs(obj.Theta_k(idx_1(~eye(obj.p)))) >= threshold_, 'all');
-            % Compute AIC and BIC.
-            obj.AIC = 2 * K + 2 * obj.lossval;
-            obj.BIC = K * obj.p * log(obj.T) + obj.lossval;
-
-            % Compute the Gaussian loss.
-            % 1. Compute the eigendecomposition of Theta.
-            [VTheta, DTheta] = pageeig(obj.Theta_k);
-            % 2. Compute the inverse of Theta.
-            invDTheta = DTheta;
-            invDTheta(obj.idx) = 1 ./ invDTheta(obj.idx);
-            invTheta = pagemtimes(pagemtimes(VTheta, invDTheta), ...
-                                  permute(VTheta, [2, 1 ,3]));
-            invTheta = (invTheta + permute(invTheta, [2, 1, 3])) / 2;
-            % 3. Compute the Gaussian loss value.
-            gau_loss = (sum(log(DTheta(obj.idx)), 'all') + ...
-                sum(obj.XXt .* invTheta, 'all')) / obj.T;
             obj.EstBreaks;
+            segment_starts = [1, obj.breaks(:)' + 1];
+            model_dimension = 0;
+            for seg_ind = 1:length(segment_starts)
+                Theta_seg = obj.Theta_k(:, :, segment_starts(seg_ind));
+                model_dimension = model_dimension + sum( ...
+                    abs(triu(Theta_seg)) >= threshold_, 'all');
+            end
+            % Compute AIC and BIC.
+            obj.model_dim = model_dimension;
+            obj.AIC = 2 * model_dimension + 2 * obj.lossval;
+            obj.BIC = model_dimension * obj.p * log(obj.T) + obj.lossval;
+
+            % X_tX_t' is rank one, so
+            %   tr(X_tX_t' inv(Theta_t)) = x_t' inv(Theta_t) x_t.
+            % Apply the eigenvectors to one vector per page instead of
+            % forming the inverse matrices.
+            [VTheta, DTheta] = pageeig(obj.Theta_k);
+            eigvals = reshape(DTheta(obj.idx), obj.p, obj.T);
+            proj = pagemtimes(permute(VTheta, [2, 1, 3]), ...
+                reshape(obj.X', obj.p, 1, obj.T));
+            quad = sum(reshape(proj, obj.p, obj.T) .^ 2 ./ eigvals, 1);
+            gau_loss = (sum(log(eigvals), 'all') + sum(quad)) / obj.T;
             C_T = log(obj.T) * log(obj.p) / obj.T;
             alpha_T = log(obj.T) * obj.p / obj.T;
 
-            % Breaks are stored as segment-end indices, so each later
-            % segment starts at breaks(j) + 1.
-            segment_starts = [1, obj.breaks(:)' + 1];
-            edge_total = 0;
-            for seg_ind = 1:length(segment_starts)
-                E_j = sum(abs(triu(obj.Theta_k(:, :, segment_starts(seg_ind)))) >= threshold_, 'all');
-                edge_total = edge_total + E_j;
-            end
-
-            obj.HBIC = obj.lossval + C_T * edge_total + alpha_T * length(obj.breaks);
-            obj.HBICG = gau_loss + C_T * edge_total + alpha_T * length(obj.breaks);
+            obj.gauss_loss = gau_loss;
+            obj.HBIC = obj.lossval + C_T * model_dimension + ...
+                alpha_T * length(obj.breaks);
+            obj.HBICG = gau_loss + C_T * model_dimension + ...
+                alpha_T * length(obj.breaks);
         end
 
         function breaks = EstBreaks(obj)
-            %% Use adpative threshold to estimate the breaks.
-            % The breaks are obtained by picking those time slots whose D_k
-            % are nonzero.
-            %
-            % - Usage:
-            %   breaks = Est.EstBreaks;
-            %   breaks % OR 
-            %   Est.breaks
+            %% Estimate change points from the fitted covariance path.
+            % A split variable can satisfy its proximal active-set condition
+            % before the equality residual is small enough to identify the
+            % fitted path. Read change points from the actual jumps of Theta
+            % and scale the threshold by the solver accuracy and path norm.
 
-            tmp_norm = vecnorm(reshape(obj.D_k(:, :, 2:obj.T), [], obj.T-1));
-            breaks = find(tmp_norm >= 1e-6)';
+            jumps = vecnorm(reshape(diff(obj.Theta_k, 1, 3), [], ...
+                obj.T - 1));
+            path_scale = max(vecnorm(reshape(obj.Theta_k, [], obj.T)));
+            breaks = find(jumps > obj.tol * path_scale);
             if obj.merge_breaks
                 breaks = mergeBreaks(breaks);
                 breaks = breaks(:)';

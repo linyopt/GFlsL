@@ -2,7 +2,7 @@ function [best_lambda1, best_lambda2, phi_hat_best, beta_full_best, cv_all] = ..
     SelectLambdasForBlocks(obj, blocks, cv_index, lambda1_grid, lambda2_grid)
     %% Select (lambda1, lambda2) via LinearDetect-style CV (GGM).
     %
-    % This method mirrors the (lambda1, lambda2) selection logic in
+    % This method implements the (lambda1, lambda2) selection logic in
     % LinearDetect:::ggm.first.step.blocks().
     %
     % - Enumerate the full grid expand.grid(lambda1, lambda2) with lambda1
@@ -63,7 +63,7 @@ phi_final = cell(kk, 1);
 % entries of `initial_phi` in column-major order. This means the warm start
 % is effectively *shared* across nodes and is not simply "row j".
 %
-% To match LinearDetect, we mirror that behavior by extracting the first
+% To match LinearDetect, we reproduce that behavior by extracting the first
 % (d*n_blocks) entries (column-major) from the previous full matrix and
 % replicating the resulting row vector across nodes.
 phi_prev_full = zeros(p, d * n_blocks);

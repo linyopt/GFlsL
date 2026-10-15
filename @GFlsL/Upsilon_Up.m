@@ -2,8 +2,8 @@ function Upsilon_Up(obj)
     %% Update Upsilon via l1 proximal.
 
     % Compute the l1 proximal.
-    obj.Upsilon_k = prox_l1(obj.Theta_k - obj.Y_k / obj.beta_, ...
-                    obj.lamb1 ./ obj.beta_);
+    obj.Upsilon_k = prox_l1(obj.Theta_k - obj.Y_k / obj.beta_u, ...
+                    obj.lamb1 ./ obj.beta_u);
     % Let the diagonal elements be 0.
     obj.Upsilon_k(obj.idx) = 0;
 end

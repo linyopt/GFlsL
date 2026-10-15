@@ -6,7 +6,7 @@ function blocks = BuildBlocks(obj, block_size)
     % This reduces edge effects when fitting blocks and when selecting
     % candidate jump locations.
     %
-    % This function mirrors the exact construction in LinearDetect:
+    % This function reproduces the exact construction in LinearDetect:
     %
     %   b_n_bound = 2 * block.size
     %   blocks <- c(

@@ -3,6 +3,9 @@ addpath(genpath(pwd))
 clear;
 % clc
 
+% Suppress the warning produced by nearlySingularMatrix comes from TBFL.
+warning('off','MATLAB:nearlySingularMatrix')
+
 % Set random seed for reproducibility.
 rng(42, 'twister')
 
@@ -15,6 +18,8 @@ overwrite_mat = false;
 showbar = 1;
 run_post_refits = true;
 run_gflsl = true;
+% Set false to skip BSOP/WBSIP/DCDP/TBFL for faster GFlsL-only runs
+run_baselines = true;
 
 % Settings.
 T = 200;
@@ -33,7 +38,7 @@ Nsim = 10;
 
 % Parameters for algorithm.
 tol = 1e-3;
-beta_ = 0.1;
+termination_check_freq = 20;
 
 % hyperparameters for adaptive weights
 if tune_mu2
@@ -109,17 +114,40 @@ for DGP = DGPs
     for p = ps
         % Use one shared lambda grid for each p across all simulation DGPs.
         if p == 10
-            lamb1s = p * (2.0e-4:5.0e-4:3.2e-3);
-            lamb2s = p * (0.12:0.08:0.44);
+            lamb1s = p * (2.0e-4:2.5e-4:4.45e-3);
+            lamb2s = p * (0.08:0.04:0.56);
             lamb2s2 = p * (0.02:0.07:0.58);
+            beta_ = 0.1;
+            termination_check_freq = 20;
         elseif p == 20
             lamb1s = p * (2.0e-4:4.0e-4:2.6e-3);
-            lamb2s = p * (0.12:0.08:0.44);
-            lamb2s2 = p * (0.02:0.06:0.38);
+            % lamb2s = p * [0.06:0.02:0.10, 0.14:0.04:0.38];
+            lamb2s = p * (0.06:0.02:0.38);
+            lamb2s2 = p * (0.02:0.06:0.50);
+            beta_ = 0.1;
+            termination_check_freq = 20;
+        elseif p == 40
+            lamb1s = p * (1.0e-4:1.0e-4:1.5e-3);
+            % lamb2s = p * [0.08:0.02:0.28, 0.32:0.04:0.48, ...
+            %     0.50:0.02:0.52];
+            lamb2s = p * (0.08:0.02:0.52);
+            lamb2s2 = p * (0.02:0.06:1.04);
+            beta_ = 0.1;
+            termination_check_freq = 20;
+        elseif p == 50
+            lamb1s = p * [1.0e-4, 2.0e-4:2.0e-4:1.2e-3];
+            % lamb2s = p * [0.06:0.02:0.18, 0.22:0.04:0.26, ...
+            %     0.28:0.02:0.30, 0.34:0.04:0.50];
+            lamb2s = p * (0.06:0.02:0.50);
+            lamb2s2 = p * (0.02:0.06:0.80);
+            beta_ = 0.1;
+            termination_check_freq = 20;
         else
             lamb1s = p * (2.0e-4:4.0e-4:2.6e-3);
             lamb2s = p * (0.12:0.08:0.44);
             lamb2s2 = p * (0.02:0.06:0.38);
+            beta_ = 0.1;
+            termination_check_freq = 20;
         end
 
         for num_breaks = num_breaks_list
@@ -165,10 +193,6 @@ for DGP = DGPs
                 prob_to_pass = NaN;
             end
 
-            if ~run_post_refits
-                methods_post = string.empty(1, 0);
-            end
-
             if string(DGP) == "banded"
                 % The banded convex-banding benchmark uses fixed lambda_scale
                 % values inside get_two_stage_est().
@@ -187,7 +211,10 @@ for DGP = DGPs
                 filepre=txt_filepre, txt_filepre=txt_filepre, mat_filepre=mat_filepre, ...
                 merge_breaks=false, DGP=DGP, prob=prob_to_pass, ...
                 post_refit_methods=methods_post, savemat=savemat, ...
-                run_gflsl=run_gflsl);
+                save_candidate_thetas=false, ...
+                run_gflsl=run_gflsl, run_post_refits=run_post_refits, ...
+                run_baselines=run_baselines, ...
+                termination_check_freq=termination_check_freq);
 
         end
     end

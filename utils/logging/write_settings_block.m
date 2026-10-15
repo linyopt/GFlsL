@@ -30,6 +30,10 @@ function write_settings_block(fid, s)
     rows = append_row_if_present(rows, s, 'mu2', @(x) sprintf('%.4g', x));
     rows = append_row_if_present(rows, s, 'kappa_', @(x) sprintf('%.4g', x));
     rows = append_row_if_present(rows, s, 'beta_', @(x) sprintf('%.4g', x));
+    rows = append_row_if_present(rows, s, 'penalty_scale', ...
+        @(x) sprintf('[%g %g %g]', x));
+    rows = append_row_if_present(rows, s, 'relaxation', ...
+        @(x) sprintf('%.4g', x));
     rows = append_row_if_present(rows, s, 'tol', @(x) sprintf('%.4g', x));
 
     key_width = max(cellfun(@(x) numel(x), rows(:, 1)));

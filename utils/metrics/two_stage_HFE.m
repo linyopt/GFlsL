@@ -1,10 +1,24 @@
 function resHFE = two_stage_HFE(HDs, F1s, errors, accuracy, breaks)
 %% Find minimum HD -> maximum F1 -> minimum error.
-    
+
     % The result corresponding to this criterion, it will contain
     %   HD, F1, error, accuracy, number of breaks.
     resHFE = zeros(1, 5);
-    
+
+    % Ignore unevaluated candidates: metric arrays are Inf-initialized and
+    % stage-1 stop lamb2 columns carry Inf/NaN, which would otherwise win
+    % the min(HD) step and produce null-metric rows.
+    valid = isfinite(HDs(:)) & isfinite(F1s(:)) & isfinite(errors(:)) & isfinite(accuracy(:));
+    HDs = HDs(valid);
+    F1s = F1s(valid);
+    errors = errors(valid);
+    accuracy = accuracy(valid);
+    breaks = breaks(valid);
+    if isempty(HDs)
+        resHFE(:) = NaN;
+        return;
+    end
+
     % Step 1: Find the minimum value in HDs and its indices.
     resHFE(1) = min(HDs(:));
     indHD = find(HDs == resHFE(1));

@@ -2,7 +2,12 @@
 % This script evaluates the wall-clock time of the non-adaptive GFlsL, the
 % first-stage estimator, and the second-stage (adaptive) estimator across
 % grids of lamb1 and lamb2 values. Results are averaged over num_exps
-% experiments.
+% experiments. Each fit is a cold start timed under the plain block-scheme
+% ADMM of Algorithm 1 (identity metric, relaxation 1.61); the timed
+% configuration is recorded in all outputs. A fixed block-diagonal
+% preconditioning (penalty_scale) leaves the estimator unchanged and only
+% accelerates convergence (about 1.7-2.3x at this scale, 1.6-2.7x on large
+% panels); it is used only by the real-data pipeline, not timed here.
 
 addpath(genpath(pwd));
 clear;
@@ -29,6 +34,13 @@ mu1 = 0.8;
 mu2 = 1.5;
 kappa_ = 0.5;
 bb_ = T ^ (-kappa_);
+
+% Solver configuration used for every timed fit: the plain block scheme of
+% Algorithm 1 as published (identity block metric, relaxation 1.61), with
+% the stopping diagnostics evaluated every 20 iterations.
+penalty_scale = [1, 1, 1];
+relaxation = 1.61;
+termination_check_freq = 20;
 
 % Grids of tuning parameters.
 lamb1s = p * (1e-5:1e-5:1e-4);
@@ -60,7 +72,9 @@ for exp_idx = 1:num_exps
             tic;
             Est = GFlsL(X=X, lamb1=lamb1s(ii), lamb2=lamb2s(jj), ...
                 beta_=beta_, epsilon=epsilon, tol=tol, maxiter=inf, ...
-                disp_freq=inf, showfig=0, merge_breaks=false);
+                disp_freq=inf, merge_breaks=false, ...
+                penalty_scale=penalty_scale, relaxation=relaxation, ...
+                termination_check_freq=termination_check_freq);
             Est.run;
             times_nonadaptive_all(ii, jj, exp_idx) = toc;
         end
@@ -73,7 +87,9 @@ for exp_idx = 1:num_exps
         tic;
         Est1 = GFlsL(X=X, lamb1=0, lamb2=lamb2s(jj), ...
             beta_=beta_, epsilon=epsilon, tol=tol, maxiter=inf, ...
-            disp_freq=inf, showfig=0, merge_breaks=false);
+            disp_freq=inf, merge_breaks=false, ...
+            penalty_scale=penalty_scale, relaxation=relaxation, ...
+            termination_check_freq=termination_check_freq);
         Est1.run;
         times_stage1_all(jj, exp_idx) = toc;
         stage1_break_counts_all(jj, exp_idx) = length(Est1.EstBreaks);
@@ -103,7 +119,9 @@ for exp_idx = 1:num_exps
             Est2 = GFlsL(X=X, lamb1=lamb1s(ii) .* xi1_, ...
                 lamb2=lamb2s(jj) .* reshape(xi2_, 1, []), ...
                 beta_=beta_, epsilon=epsilon, tol=tol, maxiter=inf, ...
-                disp_freq=inf, showfig=0, merge_breaks=false);
+                disp_freq=inf, merge_breaks=false, ...
+                penalty_scale=penalty_scale, relaxation=relaxation, ...
+                termination_check_freq=termination_check_freq);
             Est2.run;
             times_stage2_all(ii, jj, exp_idx) = toc;
         end
@@ -122,6 +140,7 @@ times_stage2_std = std(times_stage2_all, 0, 3);
 
 % Persist the raw timings
 save(fullfile(results_dir, 'complexity_times.mat'), 'T', 'p', 'num_breaks', 'prob', 'lamb1s', 'lamb2s', ...
+     'penalty_scale', 'relaxation', 'termination_check_freq', ...
      'times_nonadaptive_all', 'times_nonadaptive_mean', 'times_nonadaptive_std', ...
      'times_stage1_all', 'times_stage1_mean', 'times_stage1_std', ...
      'times_stage2_all', 'times_stage2_mean', 'times_stage2_std', ...
@@ -134,6 +153,9 @@ fprintf(fid, '===================================================\n\n');
 
 fprintf(fid, 'Settings:\n');
 fprintf(fid, '  T = %d, p = %d, num_breaks = %d, prob = %.1f\n', T, p, num_breaks, prob);
+fprintf(fid, '  penalty_scale = [%g, %g, %g], relaxation = %.2f\n', ...
+    penalty_scale, relaxation);
+fprintf(fid, '  termination_check_freq = %d\n', termination_check_freq);
 fprintf(fid, '  lamb1s = p * [%.0e, ..., %.0e] (len = %d)\n', lamb1s(1)/p, lamb1s(end)/p, len1);
 fprintf(fid, '  lamb2s = p * [%.0e, ..., %.0e] (len = %d)\n\n', lamb2s(1)/p, lamb2s(end)/p, len2);
 
@@ -194,17 +216,7 @@ fclose(fid);
 
 % Visualizations
 
-lamb1_labels = lamb1s;
 lamb2_labels = lamb2s;
-% Heatmap for non-adaptive GFlsL (using mean times)
-fig = figure('Visible', 'off');
-h_na = heatmap(lamb2_labels, lamb1_labels, times_nonadaptive_mean);
-h_na.Title = sprintf('Non-adaptive GFlsL time (T=%d, p=%d, %d exps)', T, p, num_exps);
-h_na.XLabel = '\lambda_2';
-h_na.YLabel = '\lambda_1';
-h_na.ColorbarVisible = 'on';
-exportgraphics(fig, fullfile(results_dir, 'comp-time-nonadaptive.png'), 'Resolution', 300);
-close(fig);
 
 % Line plot for first-stage GFlsL using boundedline (mean with std bounds)
 fig = figure('Visible', 'off');
@@ -219,15 +231,9 @@ legend(hl(1), 'Mean time', 'Location', 'northwest');
 exportgraphics(fig, fullfile(results_dir, 'comp-time-stage1.png'), 'Resolution', 300);
 close(fig);
 
-% Heatmap for second-stage GFlsL (using mean times)
-fig = figure('Visible', 'off');
-h_s2 = heatmap(lamb2_labels, lamb1_labels, times_stage2_mean);
-h_s2.Title = sprintf('Second-stage GFlsL time (T=%d, p=%d, %d exps)', T, p, num_exps);
-h_s2.XLabel = '\lambda_2';
-h_s2.YLabel = '\lambda_1';
-h_s2.ColorbarVisible = 'on';
-exportgraphics(fig, fullfile(results_dir, 'comp-time-stage2.png'), 'Resolution', 300);
-close(fig);
+% LaTeX tables of the (lamb1, lamb2) grids, one per estimator.
+write_comp_time_tables(results_dir, lamb1s, lamb2s, ...
+    times_nonadaptive_mean, times_stage2_mean);
 
 %% T and p computational complexity analysis
 
@@ -282,8 +288,9 @@ for ti = 1:lenT
         % First-stage timing
         tic;
         Est1 = GFlsL(X=X_current, lamb1=0, lamb2=lamb_stage1_fixed * p_fixed, ...
-            beta_=beta_, epsilon=epsilon, tol=tol, maxiter=inf, disp_freq=inf, ...
-            showfig=0, merge_breaks=false);
+            beta_=beta_, epsilon=epsilon, tol=tol, maxiter=inf, ...
+            disp_freq=inf, merge_breaks=false, penalty_scale=penalty_scale, ...
+            relaxation=relaxation, termination_check_freq=termination_check_freq);
         Est1.run;
         times_stage1_varyT_all(ti, exp_idx) = toc;
 
@@ -291,7 +298,9 @@ for ti = 1:lenT
         tic;
         Est_na = GFlsL(X=X_current, lamb1=lamb1_fixed * p_fixed, ...
             lamb2=lamb2_fixed * p_fixed, beta_=beta_, epsilon=epsilon, ...
-            tol=tol, maxiter=inf, disp_freq=inf, showfig=0, merge_breaks=false);
+            tol=tol, maxiter=inf, disp_freq=inf, ...
+            merge_breaks=false, penalty_scale=penalty_scale, ...
+            relaxation=relaxation, termination_check_freq=termination_check_freq);
         Est_na.run;
         times_nonadaptive_varyT_all(ti, exp_idx) = toc;
 
@@ -302,8 +311,9 @@ for ti = 1:lenT
         tic;
         Est2 = GFlsL(X=X_current, lamb1=lamb1_fixed * p_fixed .* xi1_, ...
             lamb2=lamb2_fixed * p_fixed .* reshape(xi2_, 1, []), beta_=beta_, ...
-            epsilon=epsilon, tol=tol, maxiter=inf,disp_freq=inf, showfig=0, ...
-            merge_breaks=false);
+            epsilon=epsilon, tol=tol, maxiter=inf, disp_freq=inf, ...
+            merge_breaks=false, penalty_scale=penalty_scale, ...
+            relaxation=relaxation, termination_check_freq=termination_check_freq);
         Est2.run;
         times_stage2_varyT_all(ti, exp_idx) = toc;
     end
@@ -335,8 +345,9 @@ for pi = 1:lenp
         % First-stage timing
         tic;
         Est1 = GFlsL(X=X_current, lamb1=0, lamb2=lamb_stage1_fixed * p_current, ...
-            beta_=beta_, epsilon=epsilon, tol=tol, maxiter=inf, disp_freq=inf, ...
-            showfig=0, merge_breaks=false);
+            beta_=beta_, epsilon=epsilon, tol=tol, maxiter=inf, ...
+            disp_freq=inf, merge_breaks=false, penalty_scale=penalty_scale, ...
+            relaxation=relaxation, termination_check_freq=termination_check_freq);
         Est1.run;
         times_stage1_varyp_all(pi, exp_idx) = toc;
 
@@ -344,7 +355,9 @@ for pi = 1:lenp
         tic;
         Est_na = GFlsL(X=X_current, lamb1=lamb1_fixed * p_current, ...
             lamb2=lamb2_fixed * p_current, beta_=beta_, epsilon=epsilon, ...
-            tol=tol, maxiter=inf, disp_freq=inf, showfig=0, merge_breaks=false);
+            tol=tol, maxiter=inf, disp_freq=inf, ...
+            merge_breaks=false, penalty_scale=penalty_scale, ...
+            relaxation=relaxation, termination_check_freq=termination_check_freq);
         Est_na.run;
         times_nonadaptive_varyp_all(pi, exp_idx) = toc;
 
@@ -356,7 +369,9 @@ for pi = 1:lenp
         Est2 = GFlsL(X=X_current, lamb1=lamb1_fixed * p_current .* xi1_, ...
             lamb2=lamb2_fixed * p_current .* reshape(xi2_, 1, []), ...
             beta_=beta_, epsilon=epsilon, tol=tol, maxiter=inf, ...
-            disp_freq=inf, showfig=0, merge_breaks=false);
+            disp_freq=inf, merge_breaks=false, ...
+            penalty_scale=penalty_scale, relaxation=relaxation, ...
+            termination_check_freq=termination_check_freq);
         Est2.run;
         times_stage2_varyp_all(pi, exp_idx) = toc;
     end
@@ -373,6 +388,7 @@ times_stage2_varyp_std = std(times_stage2_varyp_all, 0, 2);
 save(fullfile(results_dir, 'complexity_times_Tp.mat'), ...
     'T_values', 'p_values', 'p_fixed', 'T_fixed', ...
     'lamb_stage1_fixed', 'lamb1_fixed', 'lamb2_fixed', ...
+    'penalty_scale', 'relaxation', 'termination_check_freq', ...
     'times_stage1_varyT_all', 'times_stage1_varyT_mean', ...
     'times_stage1_varyT_std', ...
     'times_nonadaptive_varyT_all', 'times_nonadaptive_varyT_mean', ...
@@ -471,3 +487,52 @@ exportgraphics(fig, ...
     fullfile(results_dir, 'comp-time-stage2-varyp.png'), ...
     'Resolution', 300);
 close(fig);
+
+% =========================================================================
+function write_comp_time_tables(results_dir, lamb1s, lamb2s, times_nonadaptive, times_stage2)
+%% Write the (lamb1, lamb2) computation-time grids as one LaTeX float body.
+%
+% The two estimators are emitted side by side, each scaled to fit the text
+% block, so that the body can be pasted into a table environment together
+% with its caption and label. Rows are indexed by lamb1 and columns by lamb2,
+% which keeps the full grid the heatmaps used to carry.
+
+    panels = { ...
+        struct('title', 'Non-adaptive', 'times', times_nonadaptive), ...
+        struct('title', 'Second-stage (adaptive)', 'times', times_stage2)};
+
+    fid = fopen(fullfile(results_dir, 'comp-time-table.tex'), 'w');
+    if fid < 0
+        error('runcode_computational_complexity:openTableFailed', ...
+            'Cannot write the computation-time table.');
+    end
+    for kk = 1:numel(panels)
+        fprintf(fid, '\\resizebox{0.465\\textwidth}{!}{%%\n');
+        write_comp_time_grid(fid, lamb1s, lamb2s, ...
+            panels{kk}.title, panels{kk}.times);
+        fprintf(fid, '}\n');
+        if kk < numel(panels)
+            fprintf(fid, '\\hfill\n');
+        end
+    end
+    fclose(fid);
+end
+
+function write_comp_time_grid(fid, lamb1s, lamb2s, panel_title, times)
+%% Write one (lamb1, lamb2) computation-time grid as a LaTeX tabular.
+    fprintf(fid, '\\begin{tabular}{l*{%d}{c}}\n', numel(lamb2s));
+    fprintf(fid, '\\toprule\n');
+    fprintf(fid, '\\multicolumn{%d}{c}{%s} \\\\\n', ...
+        numel(lamb2s) + 1, panel_title);
+    fprintf(fid, '$\\lambda_1 \\backslash \\lambda_2$');
+    fprintf(fid, ' & %.1f', lamb2s);
+    fprintf(fid, ' \\\\\n');
+    fprintf(fid, '\\midrule\n');
+    for ii = 1:numel(lamb1s)
+        fprintf(fid, '%.4f', lamb1s(ii));
+        fprintf(fid, ' & %.2f', times(ii, :));
+        fprintf(fid, ' \\\\\n');
+    end
+    fprintf(fid, '\\bottomrule\n');
+    fprintf(fid, '\\end{tabular}\n');
+end
